@@ -291,7 +291,9 @@ def tool_single(tool: str, src: Path, dest_dir: Path, opts: dict, base: str) -> 
             raise ToolError('Removing every page would create an empty PDF.')
         doc.select(kept)
     elif tool == 'extract':
-        groups = parse_groups(str(opts.get('ranges','')), n)
+        groups = parse_groups(str(opts.get('ranges','')), n, required=False)
+        if not groups:
+            groups = [list(range(n))]
         if opts.get('separate'):
             output = []
             for j, group in enumerate(groups,1):
@@ -418,6 +420,48 @@ def tool_single(tool: str, src: Path, dest_dir: Path, opts: dict, base: str) -> 
     return [out]
 
 
+def organize_combined(inputs: list[Path], opts: dict, dest: Path):
+    """Build one output PDF from arbitrarily ordered pages across source PDFs."""
+    pages = opts.get('pages')
+    if not isinstance(pages, list) or not pages:
+        raise ToolError('Keep at least one page in the organized document.')
+    docs = []
+    result = fitz.open()
+    try:
+        for src in inputs:
+            docs.append(get_pdf(src, str(opts.get('password', ''))))
+        used = set()
+        for item in pages:
+            if not isinstance(item, dict):
+                raise ToolError('Invalid page selection.')
+            try:
+                file_index = int(item['file'])
+                page_index = int(item['i'])
+                angle = int(item.get('rot', 0))
+            except (KeyError, ValueError, TypeError) as ex:
+                raise ToolError('Invalid page selection.') from ex
+            if not 0 <= file_index < len(docs) or not 0 <= page_index < docs[file_index].page_count:
+                raise ToolError('Page selection references an invalid source file or page.')
+            if angle not in (0,90,180,270):
+                raise ToolError('Page rotation must be 0, 90, 180 or 270 degrees.')
+            key = (file_index, page_index)
+            if key in used:
+                raise ToolError('The same source page appears more than once.')
+            used.add(key)
+            result.insert_pdf(docs[file_index], from_page=page_index, to_page=page_index,
+                              links=True, annots=True)
+            if angle:
+                new_page = result[-1]
+                new_page.set_rotation((new_page.rotation + angle) % 360)
+        save_pdf(result, dest)
+    except Exception:
+        result.close()
+        raise
+    finally:
+        for doc in docs:
+            doc.close()
+
+
 def process(tool: str, inputs: list[Path], names: list[str], opts: dict, tmp: Path) -> tuple[Path,str]:
     if tool not in ALL_TOOLS:
         raise ToolError('Unknown tool.')
@@ -438,6 +482,10 @@ def process(tool: str, inputs: list[Path], names: list[str], opts: dict, tmp: Pa
             combined.close()
             raise
         results.append(output)
+    elif tool == 'organize':
+        target = outdir/'organized.pdf'
+        organize_combined(inputs, opts, target)
+        results.append(target)
     elif tool in IMAGE_TOOLS:
         target = outdir/('scanned.pdf' if tool == 'scan-pdf' else 'images.pdf')
         write_image_pdf(inputs,target,opts,scan=(tool=='scan-pdf'))

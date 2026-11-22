@@ -55,7 +55,7 @@ const imageTools = new Set(['jpg-pdf','scan-pdf']);
 const acceptMap = {'word-pdf':'.doc,.docx,.odt,.rtf','powerpoint-pdf':'.ppt,.pptx,.odp','excel-pdf':'.xls,.xlsx,.ods,.csv','html-pdf':'.html,.htm','jpg-pdf':'image/jpeg,image/png,image/webp,image/bmp,image/tiff','scan-pdf':'image/jpeg,image/png,image/webp,image/bmp,image/tiff'};
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state = {tool:null,files:[],pages:[],totalPages:0,nextStart:0,officeAvailable:false,working:false,previewBusy:false,dragIndex:null,latestDownload:null};
+let state = {tool:null,files:[],pages:[],totalPages:0,nextStart:0,officeAvailable:false,working:false,previewBusy:false,previewGeneration:0,previewComplete:false,pendingFileStart:null,dragIndex:null,latestDownload:null,removed:new Set()};
 
 function renderDashboard(){
   $('categoryNav').innerHTML=categories.map((c,i)=>`<a class="category-link ${i===0?'active':''}" href="#cat-${c.slug}" data-category="${c.slug}">${c.name}</a>`).join('');
@@ -99,9 +99,9 @@ function toolOptions(id){
   switch(id){
     case 'merge': s='<div class="setting-note">Files will merge in the order shown. Use the arrows beside each file to rearrange them.</div>'; break;
     case 'split': s=selection('Split method','mode',[['every','Every page'],['chunks','Every N pages'],['ranges','Custom page ranges']],'every')+when('mode','chunks',number('Pages per PDF','chunk',2,1,10000000))+when('mode','ranges',field('Page ranges','ranges','1-3, 4-7','', 'Each comma-separated group becomes a separate PDF.')); break;
-    case 'remove': s=field('Pages to remove','ranges','2, 5-7','', 'Use page numbers or ranges, e.g. 1, 3-6.'); break;
-    case 'extract': s=field('Pages to extract','ranges','1-3, 5, 8-10','', 'Enter individual pages or ranges.')+check('Save each comma-separated range as its own PDF','separate',false); break;
-    case 'organize': s='<div class="setting-note">Use the page thumbnails below the file list. Drag to change the order; ↻ rotates a page and × removes it. Pages not yet previewed will remain at the end in their original order.</div>';break;
+    case 'remove': s=field('Pages to remove','ranges','2, 5-7','', 'Click the thumbnails below or enter page numbers, e.g. 1, 3-6. Crossed pages will be deleted.'); break;
+    case 'extract': s=field('Pages to extract','ranges','1-3, 5, 8-10','', 'Leave this blank to extract ALL pages.')+'<button type="button" class="outline-small" id="extractAllBtn">Extract all pages</button>'+check('Save each comma-separated range as its own PDF','separate',false); break;
+    case 'organize': s='<div class="setting-note">Add one or more PDFs. Every page appears below in a single grid. Drag pages between files to reorder, ↻ rotates individual pages and × deletes pages. Save to produce one combined PDF.</div>';break;
     case 'compress': s=selection('Compression level','level',[['lossless','Lossless — retain original quality'],['balanced','Balanced — optimize embedded images'],['strong','Strong — smaller embedded images']],'balanced')+'<div class="setting-note">Selectable text and vector graphics are preserved. PDFs with little image content may not shrink significantly. Results can occasionally be larger.</div>';break;
     case 'jpg-pdf': s=selection('Page size','size',[['a4','A4'],['letter','US Letter'],['original','Match image dimensions']],'a4')+number('Margin (points)','margin',16,0,80);break;
     case 'scan-pdf': s=selection('Page size','size',[['a4','A4'],['letter','US Letter'],['original','Match image dimensions']],'a4')+selection('Image processing','effect',[['color','Keep original colors'],['grayscale','Grayscale'],['document','High contrast grayscale']],'document')+number('Margin (points)','margin',16,0,80)+'<div class="setting-note">Add photos or scanned image files, or use Take photo on a supported device. Physical scanner control is not included.</div>';break;
@@ -126,31 +126,40 @@ function applyVisibility(){
     node.hidden=(form.elements[name]?.value !== val);
   });
 }
+const singleFileTools = new Set(['split','remove','extract']);
+const previewTools = new Set(['organize','remove','extract']);
 function openTool(id){
   const t=tools[id];if(!t)return;
-  state={...state,tool:id,files:[],pages:[],totalPages:0,nextStart:0,dragIndex:null,latestDownload:null};
+  state.previewGeneration++;
+  state={...state,tool:id,files:[],pages:[],totalPages:0,nextStart:0,previewBusy:false,previewComplete:false,removed:new Set(),dragIndex:null,latestDownload:null};
   $('dashboard').hidden=true;$('workspace').hidden=false;
   $('workspaceCategory').textContent=t.category.toUpperCase();
   $('workspaceTitle').textContent=t.title;$('workspaceDesc').textContent=t.description;
   $('workspaceIcon').className=`active-icon ${t.color}`;$('workspaceIcon').innerHTML=svg(t.icon);
   $('settingsForm').innerHTML=toolOptions(id);
-  $('settingsForm').addEventListener('change',applyVisibility,{once:false});
+  $('settingsForm').addEventListener('change',applyVisibility);
   applyVisibility();
   const accept=acceptMap[id]||'.pdf';
   $('fileInput').accept=accept;$('folderInput').accept=accept;
-  $('fileInput').multiple=id!=='organize';
-  $('acceptHint').textContent=imageTools.has(id)?'JPG, PNG, WebP, TIFF or BMP images':officeTools.has(id)?accept.replaceAll('.', '').toUpperCase().replaceAll(',',', '):'PDF files';
+  $('fileInput').multiple=!singleFileTools.has(id);
+  $('acceptHint').textContent=singleFileTools.has(id)?'Choose exactly one PDF':imageTools.has(id)?'JPG, PNG, WebP, TIFF or BMP images':officeTools.has(id)?accept.replaceAll('.', '').toUpperCase().replaceAll(',',', '):'PDF files';
   $('cameraBtn').hidden=id!=='scan-pdf';
-  $('pageOrganizer').hidden=id!=='organize';
-  $('runLabel').textContent=id==='merge'?'Merge PDFs':id==='organize'?'Save organized PDF':id==='pdf-jpg'?'Convert to JPG':'Process files';
+  $('addFolder').hidden=singleFileTools.has(id);
+  $('addMore').hidden=singleFileTools.has(id);
+  $('pageOrganizer').hidden=!previewTools.has(id);
+  $('previewTitle').textContent=id==='organize'?'Arrange pages':id==='remove'?'Select pages to remove':'Preview pages';
+  $('previewHint').textContent=id==='organize'?'Drag to reorder; rotate or delete each page. Pages from all PDFs appear together.':id==='remove'?'Click any page to mark or unmark it for removal. The field on the right updates automatically.':'Leave page numbers blank to extract the whole document.';
+  $('restorePages').textContent=id==='remove'?'Clear selection':'Reset page changes';
+  $('runLabel').textContent=id==='merge'?'Merge PDFs':id==='organize'?'Save organized PDF':id==='pdf-jpg'?'Convert to JPG':id==='remove'?'Remove selected pages':id==='extract'?'Extract pages':'Process files';
   $('officeNote').textContent=officeTools.has(id)?(state.officeAvailable?'LibreOffice detected on this computer.':'LibreOffice desktop installation required.'):'Output saved through your browser.';
   $('alertBox').hidden=true;$('successBox').hidden=true;
+  if(id==='extract')$('extractAllBtn').addEventListener('click',()=>{$('settingsForm').elements.ranges.value='';});
   renderFiles();window.scrollTo({top:0,behavior:'instant'});
 }
-function goHome(){state.tool=null;location.hash='tools';$('workspace').hidden=true;$('dashboard').hidden=false;window.scrollTo({top:0,behavior:'instant'});}
+function goHome(){state.previewGeneration++;state.tool=null;location.hash='tools';$('workspace').hidden=true;$('dashboard').hidden=false;window.scrollTo({top:0,behavior:'instant'});}
 function allowed(file){
   const ext='.'+(file.name.split('.').pop()||'').toLowerCase();
-  const acceptable = imageTools.has(state.tool)?['.jpg','.jpeg','.png','.webp','.bmp','.tif','.tiff']:
+  const acceptable=imageTools.has(state.tool)?['.jpg','.jpeg','.png','.webp','.bmp','.tif','.tiff']:
     officeTools.has(state.tool)?acceptMap[state.tool].split(','):['.pdf'];
   return acceptable.includes(ext);
 }
@@ -158,12 +167,21 @@ function addFiles(list){
   if(!state.tool||state.working)return;
   const all=Array.from(list).filter(f=>f instanceof File);
   const good=all.filter(allowed);
-  if(good.length!==all.length)showError(`${all.length-good.length} unsupported file(s) were skipped. Please use the types listed above.`);
+  if(good.length!==all.length)showError(`${all.length-good.length} unsupported file(s) were skipped.`);
   else $('alertBox').hidden=true;
-  if(state.tool==='organize'){state.files=good.slice(-1);resetOrganizer();}
-  else state.files.push(...good);
+  if(singleFileTools.has(state.tool)){
+    if(good.length>1){showError('This tool accepts one PDF only. Please select one file.');return;}
+    if(!good.length)return;
+    state.files=[good[0]];
+    state.removed=new Set();
+    resetOrganizer();
+    loadPreview();
+  }else if(state.tool==='organize'){
+    const from=state.files.length;
+    state.files.push(...good);
+    if(good.length){if(state.previewBusy)state.pendingFileStart=state.pendingFileStart===null?from:Math.min(state.pendingFileStart,from);else loadPreview(from);}
+  }else state.files.push(...good);
   $('successBox').hidden=true;renderFiles();
-  if(state.tool==='organize'&&state.files.length)loadPreview(false);
 }
 function formatSize(bytes){if(!bytes)return'0 B';const units=['B','KB','MB','GB','TB'];const i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),4);return (bytes/(1024**i)).toFixed(i===0?0:1)+' '+units[i];}
 function renderFiles(){
@@ -172,17 +190,24 @@ function renderFiles(){
   $('fileList').innerHTML=state.files.length?state.files.map((f,i)=>{
     const kind=imageTools.has(state.tool)?'image':officeTools.has(state.tool)?'office':'';
     const ext=(f.name.split('.').pop()||'PDF').toUpperCase().slice(0,4);
-    return `<div class="file-entry"><div class="entry-icon ${kind}">${escapeHtml(ext)}</div><div class="entry-info"><b title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</b><span>${formatSize(f.size)} · File ${i+1}</span></div><div class="entry-controls">${state.files.length>1?`<button type="button" class="icon-button" data-file="up:${i}" aria-label="Move file up" ${i===0?'disabled':''}>↑</button><button type="button" class="icon-button" data-file="down:${i}" aria-label="Move file down" ${i===state.files.length-1?'disabled':''}>↓</button>`:''}<button type="button" class="icon-button remove" data-file="remove:${i}" aria-label="Remove file" title="Remove">×</button></div></div>`;
+    return `<div class="file-entry"><div class="entry-icon ${kind}">${escapeHtml(ext)}</div><div class="entry-info"><b title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</b><span>${formatSize(f.size)} · File ${i+1}</span></div><div class="entry-controls">${state.files.length>1&&state.tool!=='organize'?`<button type="button" class="icon-button" data-file="up:${i}" aria-label="Move file up" ${i===0?'disabled':''}>↑</button><button type="button" class="icon-button" data-file="down:${i}" aria-label="Move file down" ${i===state.files.length-1?'disabled':''}>↓</button>`:''}<button type="button" class="icon-button remove" data-file="remove:${i}" aria-label="Remove file" title="Remove">×</button></div></div>`;
   }).join(''):'<div class="empty-files">Your files will appear here, in the order you selected them.</div>';
   document.querySelectorAll('[data-file]').forEach(b=>b.addEventListener('click',()=>{
     const [act,idx]=b.dataset.file.split(':');const i=+idx;
-    if(act==='remove')state.files.splice(i,1);
+    if(state.previewBusy)return showError('Please let the page previews finish loading before changing the file list.');
+    if(act==='remove'){
+      state.files.splice(i,1);
+      if(state.tool==='organize'){
+        state.pages=state.pages.filter(p=>p.file!==i).map(p=>({...p,file:p.file>i?p.file-1:p.file}));
+        state.totalPages=state.pages.length;state.nextStart=state.pages.length;
+        renderPages();
+      } else if(previewTools.has(state.tool)){resetOrganizer();}
+    }
     if(act==='up'&&i>0)[state.files[i-1],state.files[i]]=[state.files[i],state.files[i-1]];
     if(act==='down'&&i<state.files.length-1)[state.files[i+1],state.files[i]]=[state.files[i],state.files[i+1]];
-    if(state.tool==='organize'){resetOrganizer();if(state.files.length)loadPreview(false);}
     renderFiles();
   }));
-  $('runButton').disabled=state.working||!state.files.length;
+  $('runButton').disabled=state.working||!state.files.length||(state.tool==='organize'&&(!state.previewComplete||state.previewBusy));
 }
 function showError(message){$('alertBox').textContent=message;$('alertBox').hidden=false;$('successBox').hidden=true;}
 function options(){
@@ -199,16 +224,19 @@ function toggleLoading(show,title,subtitle){
 }
 async function run(){
   if(!state.tool||!state.files.length||state.working)return;
+  if(singleFileTools.has(state.tool)&&state.files.length!==1){showError('Choose exactly one PDF.');return;}
   if(state.tool==='merge'&&state.files.length<2){showError('Choose at least two PDFs to merge.');return;}
   const data=new FormData();
   for(const file of state.files)data.append('files',file,file.name);
   const opts=options();
   if(state.tool==='organize'){
-    if(!state.totalPages){showError('Wait until the page preview has loaded. If the PDF is password-protected, enter its password.');return;}
-    // All unpreviewed pages remain in original order; there is no processing page cap.
-    const tail=Array.from({length:state.totalPages-state.nextStart},(_,i)=>({i:state.nextStart+i,rot:0}));
-    opts.pages=[...state.pages.map(p=>({i:p.i,rot:p.rot})),...tail];
-    if(!opts.pages.length){showError('An empty document cannot be saved. Keep at least one page.');return;}
+    if(state.previewBusy||!state.previewComplete){showError('Wait until all page previews have finished loading.');return;}
+    opts.pages=state.pages.map(p=>({file:p.file,i:p.i,rot:p.rot}));
+    if(!opts.pages.length){showError('Keep at least one page in the document.');return;}
+  }
+  if(state.tool==='remove'){
+    if(!String(opts.ranges||'').trim()){showError('Select at least one page to remove.');return;}
+    try{parsePageNumbers(opts.ranges,state.totalPages||Infinity);}catch(ex){showError(ex.message);return;}
   }
   data.append('options',JSON.stringify(opts));
   toggleLoading(true,`Working on ${state.files.length} file${state.files.length===1?'':'s'}…`);
@@ -224,46 +252,116 @@ async function run(){
   }catch(err){showError(err.message||'Unexpected local processing error.');}
   finally{toggleLoading(false);}
 }
-function resetOrganizer(){state.pages=[];state.totalPages=0;state.nextStart=0;$('thumbGrid').innerHTML='';$('pageCount').textContent='';$('loadedPages').textContent='';}
-async function loadPreview(append=true){
-  if(state.tool!=='organize'||!state.files.length||state.previewBusy)return;
-  if(!append)resetOrganizer();
-  const currentFile=state.files[0];const start=state.nextStart;
-  if(state.totalPages&&start>=state.totalPages)return;
-  state.previewBusy=true;
-  $('loadedPages').textContent='Loading preview…';
-  const form=new FormData();form.append('files',currentFile,currentFile.name);form.append('start',start);form.append('count','36');form.append('password',options().password||'');
+function parsePageNumbers(text,n){
+  const result=new Set();
+  for(const segment of text.split(',')){
+    const part=segment.trim();if(!part)throw new Error('Invalid empty page range.');
+    const m=part.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if(!m)throw new Error(`Invalid page range: ${part}`);
+    const a=Number(m[1]),b=Number(m[2]||m[1]);
+    if(a<1||b<a||b>n)throw new Error(`Page range ${part} must be between 1 and ${n}.`);
+    for(let i=a;i<=b;i++)result.add(i-1);
+  }
+  return result;
+}
+function selectedRanges(indices){
+  const sorted=[...indices].sort((a,b)=>a-b).map(x=>x+1);if(!sorted.length)return '';
+  const ranges=[];let a=sorted[0],b=a;
+  for(const value of sorted.slice(1)){
+    if(value===b+1)b=value;
+    else{ranges.push(a===b?`${a}`:`${a}-${b}`);a=b=value;}
+  }
+  ranges.push(a===b?`${a}`:`${a}-${b}`);
+  return ranges.join(', ');
+}
+function syncRemoveFromField(){
+  if(state.tool!=='remove')return;
+  const input=$('settingsForm').elements.ranges;
   try{
-    const res=await fetch('/api/inspect',{method:'POST',headers:{'X-Paperlane-Local':'1'},body:form});
-    const result=await res.json();if(!res.ok)throw new Error(result.error||'Could not preview pages.');
-    if(state.tool!=='organize'||state.files[0]!==currentFile)return;
-    state.totalPages=result.total;state.nextStart=result.start+result.images.length;
-    state.pages.push(...result.images.map(p=>({...p,rot:0})));
-    renderPages();$('alertBox').hidden=true;
-  }catch(err){showError(err.message||'Could not load preview.');}
-  finally{state.previewBusy=false;renderPageFooter();}
+    const value=input.value.trim();
+    state.removed=value?parsePageNumbers(value,state.totalPages||Infinity):new Set();
+    input.setCustomValidity('');$('alertBox').hidden=true;
+  }catch(err){input.setCustomValidity(err.message);return;}
+  renderPages();
+}
+function resetOrganizer(){
+  state.previewGeneration++;state.pages=[];state.totalPages=0;state.nextStart=0;state.previewBusy=false;state.previewComplete=false;state.pendingFileStart=null;
+  $('thumbGrid').innerHTML='';$('pageCount').textContent='';$('loadedPages').textContent='';renderPageFooter();
+}
+async function loadPreview(fromFile=0){
+  if(!previewTools.has(state.tool)||!state.files.length||state.previewBusy)return;
+  const gen=++state.previewGeneration;
+  const files=state.files.slice();
+  const mode=state.tool;
+  state.previewBusy=true;state.previewComplete=false;renderFiles();
+  try{
+    for(let f=fromFile;f<files.length;f++){
+      let start=0,total=Infinity;
+      while(start<total){
+        if(gen!==state.previewGeneration||mode!==state.tool)return;
+        $('loadedPages').textContent=`Loading ${escapeHtml(files[f].name)} — ${start} pages…`;
+        const form=new FormData();form.append('files',files[f],files[f].name);form.append('start',String(start));form.append('count','36');form.append('password',options().password||'');
+        const res=await fetch('/api/inspect',{method:'POST',headers:{'X-Paperlane-Local':'1'},body:form});
+        const data=await res.json();if(!res.ok||!data.ok)throw new Error(data.error||'Could not preview PDF pages.');
+        if(gen!==state.previewGeneration||mode!==state.tool)return;
+        total=data.total;
+        if(!data.images.length)break;
+        state.pages.push(...data.images.map(item=>({...item,file:f,rot:0})));
+        state.nextStart=state.pages.length;
+        state.totalPages=mode==='organize'?state.pages.length:total;
+        start+=data.images.length;
+        renderPages();
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
+    }
+    if(gen===state.previewGeneration){
+      state.previewComplete=true;
+      state.totalPages=state.pages.length;
+      renderPages();$('alertBox').hidden=true;
+    }
+  }catch(err){if(gen===state.previewGeneration)showError(err.message||'Could not load previews.');}
+  finally{if(gen===state.previewGeneration){state.previewBusy=false;renderPageFooter();renderFiles();if(state.pendingFileStart!==null){const next=state.pendingFileStart;state.pendingFileStart=null;loadPreview(next);}}}
 }
 function renderPageFooter(){
-  $('pageCount').textContent=state.totalPages?`(${state.totalPages} total)`:'';
-  $('loadedPages').textContent=state.totalPages?`${state.nextStart} of ${state.totalPages} previewed`:'';
-  const left=state.totalPages-state.nextStart;
-  $('loadMore').hidden=!(left>0);$('loadAll').hidden=!(left>0);
+  $('pageCount').textContent=state.totalPages?`(${state.totalPages} pages)`:'';
+  $('loadedPages').textContent=state.previewBusy?`Loading previews… ${state.nextStart} pages ready`:state.totalPages?`${state.pages.length} pages ready`:'';
+  // Previews are loaded automatically; no silent remainder can bypass user edits.
+  $('loadMore').hidden=true;$('loadAll').hidden=true;
 }
 function renderPages(){
-  $('thumbGrid').innerHTML=state.pages.map((p,i)=>`<div class="page-tile" draggable="true" data-page-tile="${i}"><div class="thumb-body"><img alt="PDF page ${p.i+1}" draggable="false" src="${p.src}" style="transform:rotate(${p.rot}deg)"></div><div class="thumb-footer"><strong>Page ${p.i+1}</strong><div class="tile-actions"><button type="button" data-page-action="rotate:${i}" aria-label="Rotate page ${p.i+1}" title="Rotate page clockwise">↻</button><button type="button" data-page-action="delete:${i}" aria-label="Delete page ${p.i+1}" title="Delete page">×</button></div></div></div>`).join('');
-  renderPageFooter();
+  $('thumbGrid').innerHTML=state.pages.map((p,i)=>{
+    const selectable=state.tool==='remove';
+    const marked=selectable&&state.removed.has(p.i);
+    const name=state.files[p.file]?.name||'PDF';
+    const source=state.tool==='organize'?`<span class="page-source" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`:'';
+    const actions=state.tool==='organize'?`<div class="tile-actions"><button type="button" data-page-action="rotate:${i}" aria-label="Rotate page ${p.i+1}" title="Rotate clockwise">↻</button><button type="button" data-page-action="delete:${i}" aria-label="Delete page ${p.i+1}" title="Delete page">×</button></div>`:'';
+    return `<div class="page-tile ${selectable?'selectable':''} ${marked?'marked':''}" ${state.tool==='organize'?'draggable="true"':''} ${selectable?`tabindex="0" role="checkbox" aria-checked="${marked}" aria-label="Remove page ${p.i+1}"`:''} data-page-tile="${i}"><div class="thumb-body"><img alt="PDF page ${p.i+1}" draggable="false" src="${p.src}" style="transform:rotate(${p.rot}deg)"></div>${source}<div class="thumb-footer"><strong>Page ${p.i+1}</strong>${actions}</div></div>`;
+  }).join('');renderPageFooter();
+}
+function toggleRemove(i){
+  const p=state.pages[i];if(!p)return;
+  if(state.removed.has(p.i))state.removed.delete(p.i);else state.removed.add(p.i);
+  $('settingsForm').elements.ranges.value=selectedRanges(state.removed);
+  $('settingsForm').elements.ranges.setCustomValidity('');
+  $('alertBox').hidden=true;renderPages();
 }
 function setupOrganizerEvents(){
   const grid=$('thumbGrid');
   grid.addEventListener('click',e=>{
-    const button=e.target.closest('[data-page-action]');if(!button)return;
-    const [action,index]=button.dataset.pageAction.split(':');const i=+index;
-    if(action==='rotate')state.pages[i].rot=(state.pages[i].rot+90)%360;
-    if(action==='delete')state.pages.splice(i,1);
-    renderPages();
+    const button=e.target.closest('[data-page-action]');
+    if(button&&state.tool==='organize'){
+      const [action,index]=button.dataset.pageAction.split(':');const i=+index;
+      if(action==='rotate')state.pages[i].rot=(state.pages[i].rot+90)%360;
+      if(action==='delete')state.pages.splice(i,1);
+      renderPages();return;
+    }
+    if(state.tool==='remove'){
+      const tile=e.target.closest('[data-page-tile]');if(tile)toggleRemove(+tile.dataset.pageTile);
+    }
   });
+  grid.addEventListener('keydown',e=>{if(state.tool==='remove'&&(e.key===' '||e.key==='Enter')){const tile=e.target.closest('[data-page-tile]');if(tile){e.preventDefault();toggleRemove(+tile.dataset.pageTile);}}});
   grid.addEventListener('dragstart',e=>{
-    const tile=e.target.closest('[data-page-tile]');if(!tile)return;
+    const tile=e.target.closest('[data-page-tile]');if(!tile||state.tool!=='organize')return;
     state.dragIndex=+tile.dataset.pageTile;tile.classList.add('dragging');
     e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(state.dragIndex));
   });
@@ -278,15 +376,7 @@ function setupOrganizerEvents(){
   });
   grid.addEventListener('dragend',()=>{state.dragIndex=null;grid.querySelectorAll('.dragging,.drag-target').forEach(t=>t.classList.remove('dragging','drag-target'));});
 }
-async function loadAllPages(){
-  if(state.previewBusy)return;
-  while(state.tool==='organize'&&state.nextStart<state.totalPages){
-    const prior=state.nextStart;
-    await loadPreview(true);
-    if(state.nextStart===prior)break;
-    await new Promise(resolve=>setTimeout(resolve,0));
-  }
-}
+async function loadAllPages(){if(state.files.length){resetOrganizer();loadPreview();}}
 function main(){
   renderDashboard();filterTools();setupOrganizerEvents();
   $('toolSearch').addEventListener('input',filterTools);
@@ -304,13 +394,13 @@ function main(){
   $('addMore').addEventListener('click',()=>$('fileInput').click());
   $('addFolder').addEventListener('click',()=>$('folderInput').click());
   $('cameraBtn').addEventListener('click',()=>$('cameraInput').click());
-  $('clearFiles').addEventListener('click',()=>{state.files=[];resetOrganizer();renderFiles();$('alertBox').hidden=true;$('successBox').hidden=true;});
-  $('restorePages').addEventListener('click',()=>{if(state.files.length)loadPreview(false);});
+  $('clearFiles').addEventListener('click',()=>{state.files=[];state.removed.clear();resetOrganizer();renderFiles();$('alertBox').hidden=true;$('successBox').hidden=true;});
+  $('restorePages').addEventListener('click',()=>{if(state.tool==='remove'){state.removed.clear();$('settingsForm').elements.ranges.value='';renderPages();}else if(state.files.length){resetOrganizer();loadPreview();}});
   $('loadMore').addEventListener('click',()=>loadPreview(true));
   $('loadAll').addEventListener('click',loadAllPages);
   $('runButton').addEventListener('click',run);
   $('settingsForm').addEventListener('input',e=>{
-    if(e.target.name==='password'&&state.tool==='organize'&&state.files.length&&!state.totalPages){/* retry via Reset pages */}
+    if(e.target.name==='ranges'&&state.tool==='remove')syncRemoveFromField();
   });
   window.addEventListener('hashchange',()=>{
     if(location.hash.startsWith('#tool-')){const tool=location.hash.slice(6);if(tools[tool]&&tool!==state.tool)openTool(tool);}

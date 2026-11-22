@@ -64,7 +64,7 @@ def test_extract(tmp_path,samples):
 
 
 def test_organize(tmp_path,samples):
-    out=call(tmp_path,'organize',[samples[0]],{'pages':[{'i':3,'rot':90},{'i':0,'rot':0}]})
+    out=call(tmp_path,'organize',[samples[0]],{'pages':[{'file':0,'i':3,'rot':90},{'file':0,'i':0,'rot':0}]})
     with fitz.open(out) as d:
         assert d.page_count==2 and d[0].rotation==90
         assert 'page 4' in d[0].get_text()
@@ -177,3 +177,42 @@ def test_office_formats(tmp_path):
     for tool,path in [('word-pdf',word),('powerpoint-pdf',presentation),('excel-pdf',spreadsheet)]:
         out=call(tmp_path,tool,[path])
         with fitz.open(out) as result:assert result.page_count>=1
+
+
+def test_organize_multiple_sources_reorder_rotate_delete(tmp_path,samples):
+    a,b,_=samples
+    opts={'pages':[{'file':1,'i':0,'rot':90}, {'file':0,'i':3,'rot':0},
+                   {'file':0,'i':0,'rot':180}]}
+    out=call(tmp_path,'organize',[a,b],opts)
+    with fitz.open(out) as d:
+        assert d.page_count==3
+        assert 'Another PDF' in d[0].get_text()
+        assert d[0].rotation==90
+        assert 'page 4' in d[1].get_text()
+        assert d[2].rotation==180
+
+
+def test_extract_blank_is_all_pages(tmp_path,samples):
+    out=call(tmp_path,'extract',[samples[0]],{'ranges':''})
+    with fitz.open(out) as d:assert d.page_count==4
+
+
+def test_invalid_organize_sources(tmp_path,samples):
+    a,b,_=samples
+    with pytest.raises(ToolError):
+        call(tmp_path,'organize',[a,b],{'pages':[{'file':2,'i':0,'rot':0}]})
+    with pytest.raises(ToolError):
+        call(tmp_path,'organize',[a,b],{'pages':[{'file':0,'i':0,'rot':0},{'file':0,'i':0,'rot':0}]})
+
+
+def test_one_pdf_only_api(tmp_path,samples):
+    from fastapi.testclient import TestClient
+    from app import app
+    a,b,_=samples
+    with TestClient(app,base_url='http://127.0.0.1:8765') as client:
+        files=[('files',(x.name,x.read_bytes(),'application/pdf')) for x in (a,b)]
+        for tool in ('split','remove','extract'):
+            r=client.post('/api/run/'+tool,headers={'X-Paperlane-Local':'1'},files=files,
+                          data={'options':'{"ranges":"1"}'})
+            assert r.status_code==400
+            assert 'exactly one' in r.json()['error']

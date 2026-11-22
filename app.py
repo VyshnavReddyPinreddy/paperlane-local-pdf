@@ -84,7 +84,7 @@ async def health():
     cleanup_jobs()
     soffice = find_libreoffice()
     return {'ok':True,'offline':True,'office':bool(soffice),
-            'version':'1.0.0','engine':f'PyMuPDF {fitz.VersionBind}',
+            'version':'1.2.0','engine':f'PyMuPDF {fitz.VersionBind}',
             'tools':len(ALL_TOOLS)}
 
 
@@ -97,8 +97,8 @@ def check_inputs(tool, uploads):
             raise ToolError(f'{f.filename or "Unnamed file"} is not supported. Allowed: {", ".join(sorted(exts))}')
     if tool == 'merge' and len(uploads) < 2:
         raise ToolError('Select at least two PDF files to merge.')
-    if tool == 'organize' and len(uploads) != 1:
-        raise ToolError('Organize one PDF at a time. You can reorder or remove any number of pages.')
+    if tool in ('split','remove','extract') and len(uploads) != 1:
+        raise ToolError(f'{tool.title()} PDF accepts exactly one PDF. Select one file.')
 
 
 async def store_files(uploads: list[UploadFile], tmp: Path):

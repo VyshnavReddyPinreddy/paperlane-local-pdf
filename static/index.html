@@ -24,14 +24,10 @@
 
   <main>
     <div id="dashboard">
-      <section class="hero shell" aria-labelledby="hero-heading">
-        <div class="hero-copy">
-          <div class="eyebrow"><span class="eyebrow-rule"></span> YOUR DOCUMENT WORKSPACE</div>
-          <h1 id="hero-heading">Every PDF tool.<br><span class="emph">All on your computer.</span></h1>
-          <p>Merge, convert, organize, and edit PDFs in one clean workspace. Your files never leave your device.</p>
-          <div class="hero-points"><span class="hero-point"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg>Private by design</span><span class="point-divider"></span><span class="hero-point"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 12h12M12 6v12"/></svg>No file-count quotas</span><span class="point-divider"></span><span class="hero-point"><svg class="mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 0 1 14.7-4.4M20 12a8 8 0 0 1-14.7 4.4"/><path d="M18 3v5h-5M6 21v-5h5"/></svg>Works offline after setup</span></div>
-        </div>
-        <div class="hero-graphic" aria-hidden="true"><div class="hero-doc back"><div class="fake-line short"></div><div class="fake-line"></div><div class="fake-line mid"></div></div><div class="hero-doc front"><span class="file-chip">PDF</span><span class="doc-lines"><span></span><span></span><span></span><span></span></span><div class="hero-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7"><path d="m5 12 4.5 4.5L19 7"/></svg></div></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div></div>
+      <section class="hero hero-compact shell" aria-labelledby="hero-heading">
+        <h1 id="hero-heading">Your PDF tools, ready to use.</h1>
+        <p>Merge, split, convert, and organize — privately, without usage quotas.</p>
+        <div class="hero-trust"><span>✓ Files never leave your device</span><span>∞ No file-count limits</span></div>
       </section>
 
       <section class="tool-area shell" id="tools">
@@ -65,14 +61,14 @@
           <input type="file" accept="image/*" capture="environment" id="cameraInput" class="sr-only">
           <div class="file-tools"><div class="file-tools-title"><h3>Selected files <span id="fileCount" class="file-count">0</span></h3><span id="sizeCount"></span></div><div class="file-action-links"><button type="button" id="addFolder" class="subtle-link">Add folder</button><button type="button" id="addMore" class="subtle-link">+ Add files</button><button type="button" id="cameraBtn" class="subtle-link" hidden>Take photo</button><button type="button" id="clearFiles" class="subtle-link danger-link">Clear</button></div></div>
           <div id="fileList" class="file-list"><div class="empty-files">Your files will appear here, in the order you selected them.</div></div>
-          <div id="pageOrganizer" class="page-organizer" hidden><div class="organizer-header"><div><h3>Arrange pages <span id="pageCount" class="muted-sm"></span></h3><p>Drag pages to reorder. Rotate or remove them individually.</p></div><button type="button" id="restorePages" class="outline-small">Reset pages</button></div><div class="thumb-grid" id="thumbGrid"></div><div class="preview-footer"><button type="button" id="loadMore" class="outline-small">Load more pages</button><button type="button" id="loadAll" class="text-button">Load all pages</button><span id="loadedPages" class="muted-sm"></span></div></div>
+          <div id="pageOrganizer" class="page-organizer" hidden><div class="organizer-header"><div><h3><span id="previewTitle">Arrange pages</span> <span id="pageCount" class="muted-sm"></span></h3><p id="previewHint">Drag pages to reorder. Rotate or remove them individually.</p></div><button type="button" id="restorePages" class="outline-small">Reset pages</button></div><div class="thumb-grid" id="thumbGrid"></div><div class="preview-footer"><button type="button" id="loadMore" class="outline-small">Load more pages</button><button type="button" id="loadAll" class="text-button">Load all pages</button><span id="loadedPages" class="muted-sm"></span></div></div>
         </div>
         <aside class="settings-panel"><div class="panel-heading"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.5" fill="#fff"/><circle cx="16" cy="17" r="2.5" fill="#fff"/></svg><h3>Tool settings</h3></div><form id="settingsForm" autocomplete="off"></form><div class="privacy-inline"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><div><strong>Private processing</strong><span>Files stay on this device.</span></div></div></aside>
       </div>
       <div class="run-footer"><p>Runs locally. No file-count quotas.<br><span id="officeNote">Output saved to your Downloads folder.</span></p><button type="button" id="runButton" class="run-button"><span id="runLabel">Process files</span><span aria-hidden="true">→</span></button></div>
     </section>
   </main>
-  <footer class="site-footer"><div class="shell footer-content"><span>paperlane<span class="brand-dot">.</span> <span class="footer-version">v1.0</span></span><span>Built for privacy. Runs on localhost.</span><span id="engineStatus">Checking local engine…</span></div></footer>
+  <footer class="site-footer"><div class="shell footer-content"><span>paperlane<span class="brand-dot">.</span> <span class="footer-version">v1.2</span></span><span>Built for privacy. Runs on localhost.</span><span id="engineStatus">Checking local engine…</span></div></footer>
   <div class="loading-overlay" id="loadingOverlay" hidden role="status" aria-live="polite"><div class="loading-card"><span class="spinner"></span><h3 id="loadingTitle">Processing your files…</h3><p id="loadingSubtitle">Working entirely on your computer. Larger documents may take a while.</p></div></div>
 </body>
 </html>

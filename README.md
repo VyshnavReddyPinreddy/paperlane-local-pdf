@@ -18,6 +18,14 @@ Run `./START_MAC_LINUX.sh` in Terminal (or `bash START_MAC_LINUX.sh`). This crea
 
 If Python venv support is missing on Ubuntu, install `python3-venv` through your package manager. If your browser does not open automatically, browse to `http://127.0.0.1:8765` yourself.
 
+## Page editing changes in v1.2
+
+- **Split, Remove, Extract:** accept one PDF only.
+- **Remove:** click thumbnails to toggle red crossed-out pages, or type ranges; both stay synchronized.
+- **Extract:** leave page ranges empty, or click **Extract all pages**, to export all pages.
+- **Organize:** select multiple PDFs, drag pages from any file to any position, rotate or delete individual pages. All thumbnails load automatically before saving. The result is one combined PDF.
+- Home page: compact privacy / no file-count limit messaging, with the tools directly underneath.
+
 ## The included tools
 
 | Group | Tools |
@@ -29,7 +37,7 @@ If Python venv support is missing on Ubuntu, install `python3-venv` through your
 | Edit PDF | Rotate PDF, Add page numbers, Add watermark, Crop PDF |
 | PDF Security | Unlock PDF, Protect PDF |
 
-**Batch processing:** All single-PDF tools except the visual page organizer can process multiple files together. Multiple outputs are downloaded in one ZIP. Drag files into the workspace or use Add folder. PDFs of many pages are supported; the organizer loads thumbnails incrementally, rather than rendering everything at once. The organizer's "Load all pages" action is available for large PDFs.
+**Batch processing:** Most remaining tools accept multiple files. Merge combines PDFs; Organize combines selected pages from multiple sources. Split, Remove, and Extract intentionally accept just one PDF. The organizer downloads page thumbnails in small batches automatically; large documents may take longer to preview.
 
 ### Important accuracy/format notes
 
